@@ -1,0 +1,19 @@
+[project]
+name = "v6switch"
+version = "0.1.0"
+description = "CAUC IPv6 Switch — 一键切换 IPv6-only（DNS64/NAT64）与回滚的桌面小工具"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.6",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pyinstaller>=6.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

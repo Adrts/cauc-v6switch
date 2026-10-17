@@ -1,0 +1,19 @@
+# 构建产物（设计文档 §7：dist/ 为最终产物目录，不入库由 make 生成）
+dist/
+build/
+
+# Python 运行环境与缓存
+app/.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# 开发期运行生成（设计文档 §5.4/§7）
+app/config.yaml
+dist/config.yaml
+
+# IDE
+.vscode/
+.idea/
+.screenshots/
+.clangd

@@ -3,8 +3,8 @@
 | 项目 | 内容 |
 | --- | --- |
 | 项目名称 | cauc-v6switch（CAUC IPv6 Switch） |
-| 版本 | v0.18（设计稿；列表契约移除 `binding_v4`，`v6_list_adapters` 退化为纯 `GetAdaptersAddresses`、彻底解除 INetCfg/COM 耦合；IPv4 状态改由 `ipv4[]` 近似表示） |
-| 日期 | 2026-10-16 |
+| 版本 | v0.28（实现稿；合并实现期结论：INetCfg 匹配键/头文件签名以安装头为准、DNS 回滚局限、参数校验先于提权检查、构建系统规范、测试落地清单） |
+| 日期 | 2026-10-17 |
 | 性质 | 练手 / 技术栈测试型小工具 |
 | 核心测试目标 | **动态链接库（DLL）的封装与 FFI 调用**（主链路 Python ctypes；多语言样例暂缓） |
 | 适用范围 | 仅针对 CAUC（中国民航大学）校内网络环境 |
@@ -18,13 +18,15 @@
 
 **业务目标**：CAUC 校园网 IPv6 连通性良好（教育网直连）。在需要体验 IPv6-only 网络时，要"禁用当前网络连接上的 IPv4 协议 + 为 IPv6 配置 DNS64 服务器"，手动操作繁琐且难还原，本工具将其一键化、可回滚；IPv4 资源经公共 NAT64/DNS64 服务（默认 nat64.net，备选 Trex / level66）访问。
 
+**环境假设（NAT64 可达性）**：所选 DNS64 服务器必须**配套可达的 NAT64 网关**，否则合成地址无法翻译、方案无效——即校园网 IPv6 须下发覆盖 `64:ff9b::/96` 的默认路由（`::/0`）。无默认路由时，切换后 IPv4 资源全断，且**与预设节点选择无关**（换 Trex/level66 同样无效），极易误判为工具缺陷；前置确认方法见 §8 验收第 0 条，风险登记见 §10。
+
 **技术测试目标（项目主要目的）**：以该真实需求为载体，测试**动态链接库的封装与 FFI 调用**——实际底层操作全部封装进 C ABI 动态链接库，调用方通过稳定契约（头文件）衔接；主链路为 Python ctypes，多语言最小样例暂缓（§4.2）。
 
 ### 1.2 两部分组成
 
 | 部分 | 形态 | 语言 | 职责 |
 | --- | --- | --- | --- |
-| ① 应用层 | Python 桌面程序（**GUI 单入口交付**；CLI 仅开发期） | Python 3.11（venv）+ PySide6 | GUI 可视化交互（唯一交付入口）；ctypes 调 DLL；**不含底层网络操作**。CLI 为开发/调试便利入口，**不随包分发** |
+| ① 应用层 | Python 桌面程序（**GUI 单入口交付**；CLI 仅开发期） | Python ≥ 3.11（venv）+ PySide6 | GUI 可视化交互（唯一交付入口）；ctypes 调 DLL；**不含底层网络操作**。CLI 为开发/调试便利入口，**不随包分发** |
 | ② 底层动态链接库 | `v6core.dll` | C++（导出 `extern "C"` C ABI） | **封装全部实际底层操作**：罗列连接、IPv4 开关、IPv6 DNS 设置、重置 |
 
 **语言约束**：本机开发环境仅有 C/C++、Node.js、Python、Go。DLL 必须为 C/C++（C ABI 是四种语言共同互操作的唯一货币）；应用层选用 Python（GUI 与原中间层调度器同为 Python，合并为单进程）；多语言调用样例暂不实施（见 §4.2），DLL 的 C ABI 契约保持语言中立。
@@ -71,11 +73,11 @@
 | --- | --- | --- |
 | FR-1 | 罗列网络连接：适配器名称、描述、状态、接口索引、IPv4/IPv6 地址、当前 DNS（单次调用输出全部信息，兼作状态查询） | ② DLL |
 | FR-2 | IPv4 开关：开启或关闭指定网络连接的 IPv4 绑定（`ms_tcpip`） | ② DLL |
-| FR-3 | IPv6 DNS 设置：为指定网络连接设置 IPv6 DNS 服务器（DNS64 预设或自定义） | ② DLL |
+| FR-3 | IPv6 DNS 设置：为指定网络连接设置 IPv6 DNS 服务器（地址来自 `config.yaml`） | ② DLL |
 | FR-4 | 重置：恢复指定网络连接的默认网络配置（IPv4 绑定开启 + IPv6/IPv4 DNS 恢复自动获取） | ② DLL |
 | FR-5 | 管理员权限校验：应用启动时检测，无权限以 `runas` 重启自身（GUI/CLI 均同） | ① 应用 |
-| FR-6 | DNS64 预设管理：内置预设（nat64.net / Trex / level66 节点表）+ 运行时自定义，配置文件持久化 | ① 应用 |
-| FR-7 | 图形界面：适配器列表、状态面板、切换/重置按钮、预设下拉、操作日志区 | ① GUI |
+| FR-6 | DNS64 配置：`config.yaml`（便携式，与程序同目录）定义启用地址列表（顺序即写入序、未注释行数即数量）；GUI 只读预览，修改经编辑配置文件；首次运行自动生成默认配置 | ① 应用 |
+| FR-7 | 图形界面：适配器列表、状态面板、切换/重置按钮、DNS64 配置预览、底部状态栏 | ① GUI |
 | FR-8 | 终端 CLI 入口：子命令（`list`/`set-ipv4`/`set-dns`/`reset`），**开发期工具**，与 GUI 共用编排封装；仅用于开发调试与自动化验证，**不随包分发**（见 §5.6） | ① CLI（开发期） |
 
 > 多语言最小调用样例（原 FR-9）**暂缓不做**（已决策，见 §4.2）；DLL 契约语言中立，未来可作为独立练手任务随时补做，不计入当前交付范围。
@@ -89,7 +91,7 @@
 | NFR-1 | 轻量：无常驻服务、低内存占用；DLL 纯 Win32 实现，不引入运行时依赖 |
 | NFR-2 | 快速：单次切换秒级完成，操作全程有反馈 |
 | NFR-3 | 安全防呆：切换/重置需二次确认（GUI 弹窗、CLI 确认行）；自动跳过回环/虚拟适配器（可切换显示） |
-| NFR-4 | 操作反馈：GUI 操作区实时回显每步结果（含错误描述）；**不写落盘日志文件** |
+| NFR-4 | 操作反馈：底部状态栏显示执行状态（就绪/执行中/完成/失败摘要）；失败细节经弹窗提示；**无界面日志区、不写落盘日志** |
 | NFR-5 | 契约稳定：`v6core.h`（FFI 契约）为单一真源，变更须同步全部调用方 |
 | NFR-6 | 可维护：两个子项目独立构建，互不依赖源码，仅依赖头文件；切换/重置编排集中于一处（GUI/CLI 共用） |
 
@@ -101,7 +103,7 @@
 
 ```
 ┌────────────────────────────────────┐
-│ ① 应用层（Python 3.11，venv）       │
+│ ① 应用层（Python ≥ 3.11，venv）     │
 │   GUI 入口：PySide6 图形界面        │
 │   CLI 入口：终端子命令（开发期）     │
 │   core_ops  切换/重置编排（共用）    │
@@ -126,12 +128,12 @@
 
 | 调用方 | 语言 | FFI 机制 | 定位 |
 | --- | --- | --- | --- |
-| 应用层（GUI/CLI 共用） | Python 3.11 | `ctypes.CDLL` + `argtypes/restype` | 主链路；指针/缓冲区构造、UTF-8 编解码、错误码转异常 |
+| 应用层（GUI/CLI 共用） | Python ≥ 3.11 | `ctypes.CDLL` + `argtypes/restype` | 主链路；指针/缓冲区构造、UTF-8 编解码、错误码转异常 |
 | 扩展位（暂缓） | 任意 | 任意 | DLL 契约语言中立（C ABI），未来可随时追加最小样例（C / Go / Node.js），主产品不动 |
 
 > **多语言最小样例（ffi-samples）暂不实施**（已决策）：主产品仅保留 Python ctypes 一条调用路径；`extern "C"` C ABI 契约本身不绑定任何调用语言，多语言验证降级为后续可选任务，需要时在 `tests/` 下追加最小样例即可。
 
-**验证方式**：同一组 DLL 函数用例在应用侧统一执行比对（见 §8）。
+**验证方式**：同一组 DLL 函数用例在应用侧统一执行（只读/参数拒绝类自动化，网络变更类人工，见 §8）。
 
 ### 4.3 工作流程
 
@@ -191,7 +193,7 @@
 /* 1. 罗列现有网络连接（一次调用完成）
  * 调用方传入预分配缓冲区（建议 64 KB，上界估算见 §5.1.2）：
  *   成功：返回 V6_OK，buf 写入 '\0' 结尾的 UTF-8 JSON 数组（字段见 §5.1.2）
- *   不足：返回 V6_ERR_BUFFER，调用方可扩容重试（仅兜底，正常不触发）
+ *   不足：返回 V6_ERR_BUFFER（buf 内容未定义、调用方不得读取），可扩容重试（仅兜底，正常不触发）
  * 兼作状态查询（GUI 状态面板数据源） */
 int  v6_list_adapters(char* buf, int buf_len);
 
@@ -208,7 +210,8 @@ int  v6_reset(uint32_t if_index);
 
 /* 配套：读取线程局部错误描述（须在同一线程、紧随失败调用后读取）
  * buf 由调用方分配；buf_len <= 0 或 buf == NULL 时返回 0 且不写；
- * buf_len 不足时截断写入但保证 '\0' 结尾，返回实际写入长度（不含 '\0'）；
+ * buf_len 不足时截断写入但保证 '\0' 结尾（实现细化：回退到 UTF-8 字符边界，
+ * 不产生非法多字节序列），返回实际写入长度（不含 '\0'）；
  * 无待取描述时返回 0。永不返回负数。 */
 int  v6_last_error(char* buf, int buf_len);
 ```
@@ -235,7 +238,7 @@ int  v6_last_error(char* buf, int buf_len);
 | --- | --- | --- |
 | `name` | 连接名（"以太网""WLAN"）——**GUI/CLI 展示与确认用；`core_ops` 执行前以 `if_index`↔`name` 配对做二次校验（§5.1.4）** | `GetAdaptersAddresses` → `FriendlyName` |
 | `desc` | 硬件/驱动描述 | 同上 → `Description` |
-| `status` | up / down | `OperStatus` |
+| `status` | up / down（`IfOperStatusUp` 输出 `up`，其余取值一律归 `down`） | `OperStatus` |
 | `if_index` | 接口索引，netsh 定位用 | `IfIndex` |
 | `ipv4[]` / `ipv6[]` | 当前各栈单播地址（IPv4 关闭后 `ipv4` 为空数组） | `FirstUnicastAddress` 按 `sa_family` 分组 |
 | `dns_v4[]` / `dns_v6[]` | 两栈各自当前 DNS 服务器 | `FirstDnsServerAddress` 按协议族分组 |
@@ -251,15 +254,15 @@ int  v6_last_error(char* buf, int buf_len);
 | 适配器数量（普通 5–15；装满虚拟化/VPN 全家桶 30–50） | 上界几十个 |
 | 全列表输出 | 典型 < 20 KB，极端 < 50 KB |
 
-调用方直接给 **64 KB 固定缓冲区，一次调用完成**；`V6_ERR_BUFFER` 仅作封装层兜底（bindings 自动扩容重试一次），GUI/CLI 不会走到该路径。对比：`GetAdaptersAddresses` 自身必须两段式探测（原生结构体展开动辄数百 KB、无廉价上界），本契约输出为紧凑文本、上界明确，固定容量即可。
+调用方直接给 **64 KB 固定缓冲区，一次调用完成**；`V6_ERR_BUFFER` 仅作封装层兜底（bindings 扩容至 256 KB 重试一次，仍不足则抛缓冲区异常），GUI/CLI 正常不走到该路径。对比：`GetAdaptersAddresses` 自身必须两段式探测（原生结构体展开动辄数百 KB、无廉价上界），本契约输出为紧凑文本、上界明确，固定容量即可。
 
 #### 5.1.3 DLL 内部实现策略
 
 | 功能 | 主路径 | 备注 |
 | --- | --- | --- |
 | 罗列网络连接 | Win32 `GetAdaptersAddresses`（iphlpapi） | 文档化 API；**纯 `GetAdaptersAddresses`，无 COM 依赖**；地址与 DNS 信息并入同一 JSON 输出 |
-| IPv4 绑定开关 | `INetCfg`（netcfgx，COM） | 与 `Disable-NetAdapterBinding` 同源；MinGW 若缺 `netcfgx.h` 等头文件，内嵌接口声明（COM 本质为 C ABI 虚表，IID/CLSID 公开）；复杂度超预期再**降级**：DLL 内隐藏进程调 `netsh interface set binding` |
-| IPv6 DNS 设置 | `netsh interface ipv6 set dnsservers` 隐藏子进程 | 无公开的按协议族 DNS 设置 API，务实取舍；首条 `set ... source=static address=<a1> validate=no`（覆盖原列表）+ 其余逐条 `add ... validate=no` 追加；**变更前用 `GetAdaptersAddresses` 记录当前 IPv6 DNS 列表做快照，执行中途失败则尽力回写原值（回滚）**再返回错误码；连接名由 DLL 内转换并转义 |
+| IPv4 绑定开关 | `INetCfg`（netcfgx，COM） | 与 `Disable-NetAdapterBinding` 同源。**接口签名以工具链安装版 `netcfgx.h` 为准**（mingw-w64 WIDL 生成，与官方 IDL 一致；实现期曾按记忆误写签名被编译器拦下）：`INetCfg::Apply()` 无参、`Initialize(PVOID)` 单参、`INetCfgLock::AcquireWriteLock(DWORD, LPCWSTR, LPWSTR*)` 三参无 HWND、枚举用 `EnumComponents` 而非 `QueryNetCfgComponent`；GUID/CLSID 经 `<initguid.h>` + `<netcfgx.h>` + `<devguid.h>` 包含序取得定义。**网卡组件匹配键 = `INetCfgComponent::GetInstanceGuid()`**（即 NetCfgInstanceId，与 `GetAdaptersAddresses` 的 `AdapterName` 同值，真机验证一致）；`GetId()` 对网卡返回驱动 INF 硬件标识（如 `pci\ven_1f0a&dev_6801`），不可作 GUID 匹配键（真机踩坑） |
+| IPv6 DNS 设置 | **主路径 `SetInterfaceDnsSettings`**（netioapi.h 文档化 API，Win10 Build 19041+）：`DNS_INTERFACE_SETTINGS` 一次写入整表静态 DNS（`Flags = DNS_SETTING_NAMESERVER \| DNS_SETTING_IPV6`，逗号分隔），免子进程、免本地化文案/OEM 码页；mingw-w64 头未收录，结构定义取自微软官方文档并经 `GetProcAddress` 动态解析（避免静态导入拉高加载基线）。**兜底与特殊路径保留 netsh 隐藏子进程**：API 缺失/失败时逐条 `set/add dnsservers validate=no`；恢复 DHCP 用 `source=dhcp`（该语义文档化，API 的 NULL 语义未文档化）；**变更前用 `GetAdaptersAddresses` 记录当前 IPv6 DNS 列表做快照，执行中途失败则尽力回写原值（回滚）**再返回错误码；连接名由 DLL 内转换并转义。**快照回滚已知局限**：`GetAdaptersAddresses` 无法区分静态配置与 DHCPv6/RA 自动学习的 DNS——对原本自动获取的接口回滚会把自动学到的地址固化为静态列表，彻底还原仍需 `v6_reset` |
 | 重置 | 组合内部逻辑：IPv4 绑定开启 + `netsh ... set dnsservers source=dhcp`（v4/v6 各一次） | 即恢复默认网络配置＝**恢复自动获取(DHCP/RA)，非快照还原**（原为静态 DNS 时不会被还原） |
 
 > **COM 初始化归属**：DLL 使用 `INetCfg` 前由**自身**在每个导出函数入口以 RAII 守卫调用 `CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)`；返回 `RPC_E_CHANGED_MODE`（调用方已 MTA）视为已初始化、不再 `CoUninitialize`，其余情况退出时 `CoUninitialize`。调用方（Python 线程）无需关心 COM 初始化——符合 §11 分层铁律。
@@ -285,6 +288,8 @@ uint32_t if_index（0 为无效值 → V6_ERR_PARAM）
 > IfIndex 稳定性边界：适配器存在期间（含禁用/启用、含本工具的绑定开关）索引不变且不会被新增接口夺走；适配器**消失后**索引失效、可能被系统回收复用给新接口。复用导致的误指由 **`core_ops` 执行前 `if_index`↔`name` 配对二次校验**拆除（新接口的连接名不可能与已占用名称相同）；连接名/编码/转义负担由此全部内聚于 DLL 内部，调用方无需触碰。
 
 **参数约束**：
+
+> 校验顺序约定：**参数层校验（含 if_index 存在性定位）先于提权检查**——`GetAdaptersAddresses` 定位为只读操作无需管理员，非法参数在非管理员环境下同样得到 `V6_ERR_PARAM` 而非 `V6_ERR_ADMIN`，这是 §8"参数拒绝类用例可自动化"的前提；三个变更函数在全部参数校验通过后才做 `is_elevated()` 防御位检查。
 
 | 函数 | 参数 | 约束 | 非法时 |
 | --- | --- | --- | --- |
@@ -314,38 +319,107 @@ DLL 执行后不自动回读，调用方刷新列表（看 `ipv4[]`/`dns_v6`）�
 1. **GUI 入口（唯一交付入口）**（`python -m v6switch` 或 `v6switch-gui`）：PySide6 图形界面（见 §5.3），随 `v6switch.exe` 分发；
 2. **CLI 入口（开发期保留，不随包分发）**：交互菜单 `[1] 罗列网络连接 [2] 切换 IPv6-only（先设 DNS64 后关 IPv4）[3] 重置 [0] 退出`；或子命令 `v6switch list|set-ipv4|set-dns|reset|presets`（与 4 个导出函数对应）。仅用于开发调试与自动化验证；最终交付包**不含**此入口（`--noconsole` 生成窗口子系统 exe、无控制台句柄，见 §5.6）。
 
-- **FFI 绑定**（`bindings/v6core.py`）：`ctypes.CDLL("v6core.dll")`，逐函数声明 `argtypes`/`restype`；提供类型安全函数（缓冲区自动构造/扩容重试、UTF-8 编解码、错误码转异常）；**错误码转异常必须在同一线程、紧随 DLL 调用返回完成**——`v6_last_error` 为线程局部，禁止跨线程缓存或延迟读取；若经 QThread 调用 DLL，由该工作线程就地读取并抛异常，再经 signal 回传异常对象给主线程；
+- **FFI 绑定**（`bindings/v6core.py`）：按 §5.6 探测顺序解析 `v6core.dll` **绝对路径**后 `ctypes.CDLL(abs_path)` 加载（不依赖 OS 裸名搜索），逐函数声明 `argtypes`/`restype`；提供类型安全函数（缓冲区自动构造/扩容重试、UTF-8 编解码、错误码转异常）；**错误码转异常必须在同一线程、紧随 DLL 调用返回完成**——`v6_last_error` 为线程局部，禁止跨线程缓存或延迟读取；
+- **线程模型（强制）**：所有 DLL 操作一律经 **QThread 工作线程**执行（`INetCfg Apply` 与 netsh 子进程耗时秒级，GUI 主线程直调会冻结界面、违反 NFR-2"全程有反馈"）；工作线程就地读取错误并转异常，经 signal 回传结果/异常对象给主线程，主线程仅负责渲染与对话框；
 - **编排封装**（`core_ops.py`）：`switch_to_ipv6(if_index, name, dns)` 与 `reset(if_index, name)` 两个高层函数，固化两条铁律：**执行前 `if_index`↔`name` 配对二次校验**（重新罗列并比对，不符提示刷新重选，防目标消失后索引被复用导致误操作，见 §5.1.4）与**先 DNS 后关 IPv4 的切换顺序**；GUI 与 CLI 一律调它，禁止各自拼 DLL 调用序列；
-- **提权**：启动时 `ctypes.windll.shell32.IsUserAnAdmin()` 检测；无权限以 `ShellExecuteW(..., "runas", sys.executable, ...)` 重启自身（触发一次 UAC），拒绝降权运行；
-- **依赖**：交付依赖仅 PySide6；`rich`（CLI 美化）为**开发期可选依赖**，不进入打包；venv 管理。
+- **提权**：启动时经 advapi32 读取进程令牌 `TokenElevation` 检测（与 DLL 侧 `is_elevated` 同源判定；`shell32.IsUserAnAdmin()` 已被微软文档标注"可能被修改或不可用"，不采用）；无权限以 `ShellExecuteW(..., "runas", sys.executable, ...)` 重启自身（触发一次 UAC），拒绝降权运行；
+- **依赖**：交付依赖 PySide6 + PyYAML（config.yaml 解析，随 PyInstaller 打包）；开发期另需 pytest + pyinstaller（`[dev]` extras）；CLI 使用纯 print 输出（不引入 rich）；venv 管理。
 
-### 5.3 GUI 界面设计（PySide6 / Qt Widgets）
+### 5.3 界面设计（PySide6 / Qt Widgets）
 
-- **界面布局**（单窗口）：
-  - 顶部：适配器 `QTableWidget`（名称/描述/状态/IP 摘要）+ 刷新按钮；
-  - 中部：所选适配器状态面板（IPv4 地址状态——`ipv4[]` 是否为空、当前 DNS）；
-  - 底部：DNS64 预设下拉（读共享 `config.toml`）+ 自定义地址 + [切换 IPv6-only] [重置] + 日志 `QPlainTextEdit`（只读）；
-  - 切换/重置前 `QMessageBox.question` 二次确认；
+界面元素由交互需求反推（FR-1~FR-7、NFR-2/3/4），分五个功能区。实际布局与视觉样式见 §5.3.3（已落地）。
+
+#### 5.3.1 界面元素规范
+
+**A. 适配器列表区** —— 回答"操作谁"
+
+| 元素 | 职责 | 交互 / 数据 |
+| --- | --- | --- |
+| A1 适配器表格 | 列出网络连接，供选择操作目标 | 列：名称 / 描述 / 状态 / IP 摘要 / IPv4 状态（`ipv4[]` 空 → "已关闭"）；**单选**（工具作用域 = 单接口，§1.4）；启动自动加载，默认选中首个 `up` 的物理适配器（§4.3 步骤 2） |
+| A2 显示虚拟适配器复选框 | 虚拟适配器过滤开关（NFR-3） | 默认关闭（回环/Hyper-V/WSL/TAP 不显示）；勾选后显示全部（按 `virtual` 字段过滤） |
+| A3 刷新按钮 | 重新罗列网络连接 | 调 `v6_list_adapters`，完成后同步状态面板 |
+
+**B. 状态面板区** —— 回答"现在什么状态"
+
+| 元素 | 职责 | 交互 / 数据 |
+| --- | --- | --- |
+| B1 模式标识 | 判定所选适配器当前网络模式 | 依 `ipv4[]`/`ipv6[]`：双栈 / IPv4-only / **IPv6-only**；已是 IPv6-only 时再点切换，确认框内提示"当前已是 IPv6-only"（防呆） |
+| B2 IPv4 地址行 | 显示 `ipv4[]` | 空 → 显示"已关闭"；非空 → 地址列表 |
+| B3 IPv6 地址行 | 显示 `ipv6[]` | — |
+| B4 DNS 行 | 显示当前生效 DNS | `dns_v4[]` 与 `dns_v6[]`（DNS64 生效时在 dns_v6 可见） |
+
+**C. 操作区** —— 回答"做什么"
+
+| 元素 | 职责 | 交互 / 数据 |
+| --- | --- | --- |
+| C1 DNS64 配置预览（只读） | 展示将写入的 DNS64 地址与数量（FR-6） | 数据源 `config.yaml`（解析规则见 §5.4）：按序列出启用地址 + `count`；配置为空/非法时标红提示；**修改请编辑配置文件**，GUI 不提供编辑 |
+| C2 [切换 IPv6-only] 按钮 | 一键切换（core_ops 编排） | 二次确认（E3）→ QThread 执行 `switch_to_ipv6`；**执行前重读 `config.yaml`**（所见即所执）；先 DNS 后关 IPv4（§11 顺序铁律） |
+| C3 [重置] 按钮 | 恢复默认网络配置 | 二次确认（E3，文案明示"原有静态 DNS 会被清除，非快照还原"）→ QThread 执行 `reset` |
+
+**E. 全局、状态栏与对话框**
+
+| 元素 | 职责 | 交互 / 数据 |
+| --- | --- | --- |
+| E1 提权状态标签 | 显示当前权限（状态栏内） | 正常态"管理员"（启动即提权，FR-5）；异常态提示并退出 |
+| E2 DLL 缺失弹窗 | 启动加载失败提示 | `bindings` 按 §5.6 探测顺序找不到 DLL → 弹窗说明缺 `v6core.dll` 及应放置位置，确认后退出 |
+| E3 二次确认对话框 | 危险操作防呆（NFR-3） | `QMessageBox.question`；切换/重置前必弹，文案含目标适配器名 + 动作后果 |
+| E4 底部状态栏 | 执行状态与防并发指示（NFR-2/4） | 空闲"就绪"；执行中"执行中…"且 C2/C3/A3 禁用；完成"切换完成/重置完成"；失败"操作失败：<错误摘要>"；E1 提权标签并列其内 |
+
+#### 5.3.2 控件可用性规则
+
+| 应用状态 | A1 列表 | A3 刷新 | C2/C3 变更按钮 | C1 预览 |
+| --- | --- | --- | --- | --- |
+| 启动加载中 | 空 | 禁用 | 禁用 | 禁用 |
+| 空闲 + 有选中 | 可用 | 可用 | 可用 | 可用 |
+| 空闲 + 无选中 | 可用 | 可用 | 禁用 | 可用 |
+| 操作执行中 | 可用（仅展示） | 禁用 | 禁用 | 可用（仅展示） |
+
+> 执行中列表保持可见（旧数据），选中变更不影响进行中的操作——正确性由 `core_ops` 身份校验兜底（§5.1.4），UI 层只做防误触。
+
+#### 5.3.3 布局
+
+**骨架**：单窗口纵向分区——顶部列表区（A）→ 中部状态面板（B）→ 底部操作区（C）→ 窗口最底部状态栏（E4）；窗口设最小尺寸，极限拉伸/缩放下各元素完整展示（§11）。
+
+**实际布局（已按骨架落地）**：单 `QVBoxLayout` 纵向排列三个 `QGroupBox`（拉伸比 3:2:2）——A「网络连接」（`QTableWidget` 单选行，列＝名称/描述/状态/IP 摘要/IPv4 状态；底部一行：显示虚拟适配器复选框 + 弹簧 + 刷新按钮）→ B「当前状态」（`QFormLayout`：模式/IPv4 地址/IPv6 地址/DNS，地址行可选中复制）→ C「操作」（DNS64 预览 `QLabel` 自动换行；按钮行右对齐：切换 IPv6-only、重置）。状态栏左＝执行状态、右＝提权标识。**视觉样式**：Qt 原生主题，无自定义配色/图标；DNS64 预览异常态以红色文字标示。窗口最小尺寸 860×640，各元素可随拉伸完整展示（§11）。
+
 - **构建/打包**：开发期直接 `python -m v6switch` 运行；分发由根 `Makefile` 的 `exe` 目标调 PyInstaller 打单文件 exe（`--onefile --noconsole`），详见 §5.6；
 - **选型说明**：PySide6（Qt 官方 Python 绑定，LGPL）控件成熟、观感现代；重心仍是链路与 FFI 正确性，不做复杂界面动效。
 
-### 5.4 DNS64 预设（`config.toml`）
+---
 
-路径 `%APPDATA%\v6switch\config.toml`，首次运行由应用自动生成：
+### 5.4 DNS64 配置（`config.yaml`）
 
-| Provider | 位置 | DNS64 地址 |
-| --- | --- | --- |
-| nat64.net | Amsterdam | `2a00:1098:2b::1` |
-| nat64.net | Ashburn | `2a01:4ff:f0:9876::1` |
-| nat64.net | Helsinki | `2a01:4f9:c010:3f02::1` |
-| nat64.net | London | `2a00:1098:2c::1` |
-| nat64.net | Nuremberg | `2a01:4f8:c2c:123f::1` |
-| Trex | Tampere | `2001:67c:2b0::4` |
-| Trex | Tampere | `2001:67c:2b0::6` |
-| level66 | Germany | `2001:67c:2960::64` |
-| level66 | Germany | `2001:67c:2960::6464` |
+路径：**与程序本体同目录**的 `config.yaml`（便携式，不放 `%APPDATA%`，与 DLL 同目录原则一致）。定位规则（`presets.py`，双模式保证源码/打包均可读）：
 
-> **默认预设「nat64.net 多节点」**：Amsterdam + London + Nuremberg 三个地址按序写入（`count = 3`，在 `v6_set_ipv6_dns` 的 1–16 上限内）。GUI 预设下拉可选任意单节点（`count = 1`）或默认组合，亦可运行时输入自定义 DNS64 地址（FR-6，config.toml 持久化）。
+```python
+def config_path() -> Path:
+    if getattr(sys, "frozen", False):                     # 打包（PyInstaller exe）
+        return Path(sys.executable).parent / "config.yaml"   # exe 同目录（dist/）
+    return Path(__file__).resolve().parents[1] / "config.yaml"  # 开发：app/（pyproject.toml 同级）
+```
+
+- 首次运行不存在 → 自动生成默认配置到上述路径；程序始终以管理员运行（FR-5），程序目录写入权限有保证；
+- 解析用 PyYAML。**GUI 不提供地址编辑**——启用哪些地址、写入顺序、写入数量全部由配置文件决定：
+
+```yaml
+# DNS64 服务器列表
+# 规则：按序写入 v6_set_ipv6_dns；行首加 # 即停用该地址；
+# 未注释行数 = 实际写入数量 count（须 1 ≤ count ≤ 16）
+dns64:
+  - 2a00:1098:2b::1         # nat64.net Amsterdam
+  - 2a00:1098:2c::1         # nat64.net London
+  - 2a01:4f8:c2c:123f::1    # nat64.net Nuremberg
+  # - 2a01:4ff:f0:9876::1   # nat64.net Ashburn
+  # - 2a01:4f9:c010:3f02::1 # nat64.net Helsinki
+  # - 2001:67c:2b0::4        # Trex Tampere
+  # - 2001:67c:2b0::6        # Trex Tampere
+  # - 2001:67c:2960::64      # level66 Germany
+  # - 2001:67c:2960::6464    # level66 Germany
+```
+
+- **解析规则**：顺序即写入顺序；未注释行数即 `count`（默认 3 = nat64.net 三节点组合）；解析失败或启用数为 0 → GUI 预览（C1）标红提示，[切换] 按钮拒绝执行；
+- **读取时机**：切换执行前由 `core_ops` 重读 `config.yaml`（所见即所执）；预览在启动/刷新时更新；
+- 备用节点以注释形式内置（Trex / level66 等），取消注释即启用。
 
 ### 5.5 错误处理
 
@@ -355,7 +429,7 @@ DLL 执行后不自动回读，调用方刷新列表（看 `ipv4[]`/`dns_v6`）�
 | 目标接口不存在/列表已变化 | `core_ops` 执行前 `if_index`↔`name` 配对二次校验，不符提示刷新重选；DLL 侧匹配不到 → `V6_ERR_PARAM` |
 | 连接名含空格/中文/特殊字符 | 跨边界只传 `if_index`（纯数字，无编码歧义）；DLL 内部转 UTF-16 并对 netsh 命令行转义 |
 | DLL 函数失败 | 负错误码 + `v6_last_error`；若 DNS 已设成功而关闭 IPv4 失败，`core_ops` 提示并建议执行 `v6_reset` 恢复 |
-| 调用方缓冲区不足 | `V6_ERR_BUFFER` 仅作兜底（主路径 64 KB 固定缓冲区一次调用，正常不触发，见 §5.1.2）；`bindings` 封装层自动扩容重试一次 |
+| 调用方缓冲区不足 | `V6_ERR_BUFFER` 仅作兜底（主路径 64 KB 固定缓冲区一次调用，正常不触发，见 §5.1.2）；`bindings` 扩容至 256 KB 重试一次，仍不足则抛缓冲区异常 |
 | 安全软件拦截 netsh/INetCfg | 明确错误码与提示，建议放行 |
 
 ### 5.6 构建与交付（Make）
@@ -364,17 +438,20 @@ DLL 执行后不自动回读，调用方刷新列表（看 `ipv4[]`/`dns_v6`）�
 
 | 目标 | 动作 | 产物 |
 | --- | --- | --- |
-| `make dll` | g++ 编译链接 `v6core/`（`-static-libgcc -static-libstdc++`，链接 iphlpapi/ole32 等） | `dist/v6core.dll` |
+| `make dll` | 逐源文件编译 `.o`（`build/obj/`，模式规则匹配 `v6core/src/` 与 `util/`，任一头文件变更全量重编）→ 统一链接（`-static-libgcc -static-libstdc++`，链接 iphlpapi/ole32 等）；增量编译：改动单个 `.cpp` 仅重编该文件 | `dist/v6core.dll` |
 | `make exe` | venv 内 PyInstaller 打包应用（`--onefile --noconsole`，**不内嵌 DLL**） | `dist/v6switch.exe` |
 | `make all` | `dll + exe`（默认目标） | 两个最终产物 |
-| `make test-dll` | g++ 编译并运行 `v6core/tests/` C++ 单元测试（纯 `<cassert>`，无第三方框架） | — |
-| `make test` | `test-dll` + pytest（`tests/python/`） | — |
+| `make test` | pytest（`tests/python/`，含真实 DLL 端到端用例——仅只读/参数拒绝类，不改动网络配置，见 §8） | — |
 | `make clean` | 清理中间产物 | — |
 
 - **最终产物仅两个文件，分离分发**：`v6core.dll`（C ABI 库）+ `v6switch.exe`（单文件 exe，内嵌 Python 运行时与 PySide6，**不含 DLL**，**仅含 GUI 入口**）。两文件须放在同一目录；exe 运行时从**自身同目录**加载 `v6core.dll`，`bindings` 探测顺序：① exe/主模块同目录 → ② 开发期项目 `dist/` → ③ 加载失败弹窗提示缺 DLL；`make exe` 不使用 `--add-binary`；
-- **打包入口收敛为 GUI 单入口**：`--onefile --noconsole` 生成窗口子系统 exe，无控制台句柄，无法承载 CLI。故交付包只含 GUI；CLI 入口仅存在于源码/开发环境（`python -m v6switch.cli`）。**不做**"按参数分支让同一 exe 兼作 GUI/CLI"的方案（否则要么破坏 `--noconsole`、要么 GUI 启动闪控制台窗口）；
-- 工具链前置：MinGW-w64（g++/mingw32-make）、Python 3.11 venv（`pyproject.toml` 含 pyinstaller）。
+- **配置文件便携化**：`config.yaml` 不内嵌、不随包分发；首次运行生成于 exe 同目录（双模式定位规则见 §5.4），与"程序同目录"原则一致；
+- **打包入口收敛为 GUI 单入口**：`--onefile --noconsole` 生成窗口子系统 exe，无控制台句柄，无法承载 CLI。故交付包只含 GUI；CLI 入口仅存在于源码/开发环境（`python -m v6switch.cli`）。**不做**"按参数分支让同一 exe 兼作 GUI/CLI"的方案（否则要么破坏 `--noconsole`、要么 GUI 启动闪控制台窗口）。打包入口为 `app/run.py`（包外脚本、绝对导入）——包内 `__main__.py` 含相对导入，直接作 PyInstaller 脚本入口会因无包上下文而失败；
+- 工具链前置：llvm-mingw（clang++ + mingw-w64 UCRT 头/库，`D:\Toolchains\llvm-mingw-*`，与项目根 `.clangd` 一致；`make dll` 经根 Makefile 的 CXX 变量指定，命令行可覆盖）、Python ≥ 3.11 venv（`pyproject.toml` 含 pyinstaller）。
 - **venv 路径与测试联动**：Makefile 显式 `VENV := app/.venv`；`make test` 用 `$(VENV)/Scripts/python -m pytest tests/python`，并先依赖 `make dll`，确保 ctypes 能加载真实 DLL。
+- **打包体积裁剪（§10 落地）**：双管齐下，exe 由 48.7MB 降至约 28MB。① Makefile `PI_EXCLUDES` 集中排除未用的 Qt **模块**（WebEngine/Qml/Quick/3D/Multimedia/Network/Pdf/Svg/Charts/Sql 等）与 tkinter/unittest/pydoc_data/ssl；② `app/trim_pyside6.py`（打包前自动运行，幂等可逆）把 venv 中不用且**钩子层拦不住**的 Qt 文件改名 `*.disabled`——opengl32sw.dll（软件 GL）、虚拟键盘输入上下文插件（连坐拉入 Quick/Qml 全家族）、qpdf/networkinformation/qtuiotouch 插件（拉入 Qt6Pdf/Network）、qdirect2d 平台插件。残余体积为 QtCore/Gui/Widgets + Python 运行时 + 常用插件，均为必需。
+- **make clean 为 python 实现**：scoop GNU Make 环境下 `$(COMSPEC)` 展开为空，cmd 内嵌式写法必然失败；改为系统 `python -c` 执行 `shutil.rmtree`，任何 shell 下行为一致（保留 app/config.yaml 用户配置，仅清 dist/build/egg-info/pytest 缓存）。
+- **Makefile 构建规范（实现期沉淀）**：① 目录创建统一走 `MKDIR` 变量（python `os.makedirs`）——scoop make（cmd shell）与 Git Bash make（sh shell）下 `mkdir` 语义/路径写法不兼容，python 实现双环境一致；② 构建输出外显 `CXX <源文件>` / `LD dist/v6core.dll` / `TRIM PySide6` / `PYINSTALLER dist/v6switch.exe`，完整命令行以 `@` 静默，`make dll V=1` / `make exe PI_LOGFLAGS=--log-level=DEBUG` 可恢复；③ PyInstaller INFO 刷屏经 `export PYI_LOG_LEVEL = WARN` 压制（其 `--log-level` 在 6.22 仅 setLevel 子 logger，拦不住 basicConfig 层面的启动横幅；`export` 对 cmd/sh recipe 环境均生效）。
 
 ---
 
@@ -382,8 +459,8 @@ DLL 执行后不自动回读，调用方刷新列表（看 `ipv4[]`/`dns_v6`）�
 
 | 部分 | 选型 | 理由 | 备选 |
 | --- | --- | --- | --- |
-| ② DLL | C++（MinGW-w64 / GCC）+ Make，导出 C ABI | 本机 C 工具链为 MinGW（自带 g++/mingw32-make）；`extern "C" __declspec(dllexport)` 在 GCC 下同样生效，x64 调用约定统一，C ABI 是全部四种环境语言互操作的唯一货币；静态链接 GCC 运行时（`-static-libgcc -static-libstdc++`）保持单 DLL 零依赖（NFR-1） | MSVC + CMake |
-| ① 应用层 | Python 3.11（venv）：PySide6 GUI（交付）+ CLI（开发期），ctypes | 同语言合并单进程；ctypes FFI 成熟；PySide6（Qt Widgets）控件成熟、观感现代；交付仅 GUI，CLI 不进包 | GUI 可回退 Tkinter；FFI 可换 Go（`syscall`）/ Node.js（`koffi`） |
+| ② DLL | C++（llvm-mingw：clang++ + mingw-w64 UCRT）+ Make，导出 C ABI | 本机工具链为 llvm-mingw（`D:\Toolchains\llvm-mingw-*`，与 `.clangd` 一致；头/库沿用 mingw-w64）；`extern "C" __declspec(dllexport)` 在 clang 下同样生效，x64 调用约定统一，C ABI 是全部四种环境语言互操作的唯一货币；静态链接 C++ 运行时（`-static-libgcc -static-libstdc++`）保持单 DLL 零依赖（NFR-1） | MSVC + CMake；TDM-GCC（`D:\Toolchains\tdm64-gcc-*`） |
+| ① 应用层 | Python ≥ 3.11（venv）：PySide6 GUI（交付）+ CLI（开发期），ctypes | 同语言合并单进程；ctypes FFI 成熟；PySide6（Qt Widgets）控件成熟、观感现代；交付仅 GUI，CLI 不进包 | GUI 可回退 Tkinter；FFI 可换 Go（`syscall`）/ Node.js（`koffi`） |
 | 工程管理 | **Make**（根 `Makefile`）：`dll` 目标编译 v6core.dll，`exe` 目标 PyInstaller 打包，`all = dll + exe` | 一条命令串起编译→测试→打包；**最终产物收敛为 `v6core.dll` + `v6switch.exe` 两个文件**（详见 §5.6） | CMake + 手工脚本 |
 | FFI 样例 | 暂缓（见 §4.2） | 主产品保留 Python ctypes 单链路；DLL 契约语言中立，样例可作为后续练手任务随时补做 | C / Go / Node.js |
 
@@ -395,7 +472,7 @@ DLL 执行后不自动回读，调用方刷新列表（看 `ipv4[]`/`dns_v6`）�
 
 ```
 cauc-v6switch/
-├── Makefile                     # 工程管理：make dll / make exe / make all / make test / make test-dll / make clean
+├── Makefile                     # 工程管理：make dll / make exe / make all / make test / make clean
 ├── docs/                        # 文档（本文件）
 │   └── design.md
 ├── v6core/                      # ② 底层动态链接库
@@ -406,43 +483,48 @@ cauc-v6switch/
 │   │   ├── ipv4.cpp             # v6_set_ipv4（INetCfg 绑定开关）
 │   │   ├── dns.cpp              # v6_set_ipv6_dns（netsh 子进程封装）
 │   │   ├── reset.cpp            # v6_reset（恢复默认配置）
-│   │   └── util/                # 编码转换/进程/错误/JSON（与 Win32 解耦，便于单测）
-│   └── tests/                   # DLL 侧 C++ 单元测试（JSON/编码/命令构造/截断；make test-dll）
-│       └── test_units.cpp
+│   │   └── util/                # 编码转换/进程/错误/JSON（关注点分离）
 ├── app/                         # ① 应用层（GUI 交付入口 + CLI 开发期入口，同一包同一 venv）
 │   ├── v6switch/
 │   │   ├── __main__.py          # GUI 入口：python -m v6switch（唯一交付入口）
 │   │   ├── cli.py               # CLI 入口：v6switch <cmd>（开发期工具，不随包分发）
 │   │   ├── gui.py               # PySide6 界面
 │   │   ├── core_ops.py          # 切换/重置编排（身份校验 + 顺序铁律，GUI/CLI 共用）
-│   │   ├── presets.py           # config.toml 读写
+│   │   ├── presets.py           # config.yaml 读写（便携式定位：frozen→exe 目录 / dev→app/）
 │   │   ├── admin.py             # 提权检测 + runas 重启自身
 │   │   └── bindings/v6core.py   # ctypes 绑定封装
+│   ├── run.py                   # PyInstaller 打包专用入口（脚本态绝对导入，仅构建用）
+│   ├── trim_pyside6.py          # 打包前 PySide6 体积裁剪（幂等改名停用，仅构建用）
+│   ├── config.yaml              # 开发期运行生成（不入库）
 │   └── pyproject.toml
 ├── tests/
-│   └── python/                  # bindings mock DLL、core_ops 编排用例
-└── dist/                        # 最终产物：v6core.dll + v6switch.exe（make 生成）
+│   └── python/                  # 纯 Python 用例（mock DLL + core_ops/presets/admin）+ GUI offscreen 用例
+│                                #   + 真实 DLL 端到端用例（仅只读/参数拒绝类；缺 dist/v6core.dll 时自动跳过）
+└── dist/                        # 最终产物：v6core.dll + v6switch.exe（make 生成）；config.yaml 首次运行生成于 exe 旁
 ```
 
 ---
 
 ## 8. 测试与验收
 
-**DLL 用例验证**（核心）：每个导出函数 × 常规/边界用例，在应用侧统一执行比对：
+**DLL 用例验证**（核心）：每个导出函数 × 常规/边界用例，在应用侧统一执行。**涉及真实网络配置变更的用例一律为人工测试（真机手动执行），不进入 `make test` 自动化**——避免 pytest 实际改动开发机网络（如关闭本机 IPv4 绑定）：
 
-| 用例 | DLL 基准 | Python 应用 |
+| 用例 | 执行方式 | 预期 |
 | --- | --- | --- |
-| `v6_list_adapters` 缓冲区不足（兜底路径）→ 扩容重试 | 基准 | 重试一致 |
-| `v6_list_adapters` 中文适配器名 | UTF-8 输出 | 解析一致 |
-| `v6_set_ipv4` 传入无效/已失效 `if_index`（含 0） | `V6_ERR_PARAM` | 同 |
-| `v6_set_ipv6_dns` 合法/非法 IPv6 地址 | 基准 / `V6_ERR_PARAM` | 一致 |
-| 切换序列（`v6_set_ipv6_dns` → `v6_set_ipv4(0)`）全流程 | 基准 | 一致 |
-| `v6_reset` 往返（切换后重置恢复默认） | 基准 | 一致 |
+| `v6_list_adapters` 中文适配器名 | 自动（pytest + 真实 DLL） | UTF-8 输出、解析一致 |
+| `v6_list_adapters` 缓冲区不足（兜底路径）→ 扩容重试 | 自动 | 重试成功、与直调一致 |
+| `v6_set_ipv4` 传入无效/已失效 `if_index`（含 0） | 自动（参数层拒绝，不触网） | `V6_ERR_PARAM` |
+| `v6_set_ipv6_dns` 非法 IPv6 地址 | 自动（参数层拒绝，不触网） | `V6_ERR_PARAM` |
+| `v6_last_error` 截断/NULL/零长边界 | 自动 | 语义符合 §5.1.1 |
+| `v6_set_ipv4` 真实开/关绑定 | **人工**（验收第 3/7 条） | `ipv4[]` 随之清空/恢复 |
+| 切换序列（`v6_set_ipv6_dns` → `v6_set_ipv4(0)`）全流程 | **人工**（验收第 3/4 条） | 解析全程不断、NAT64 可达 |
+| `v6_reset` 往返（切换后重置恢复默认） | **人工**（验收第 7 条） | 恢复自动获取 |
 
-**单元测试**：DLL 侧（`v6core/tests/`，`make test-dll`：JSON 序列化/转义、UTF-8↔UTF-16、netsh 命令行构造与转义、`v6_last_error` 截断）；Python 侧（bindings 封装 mock DLL、core_ops 编排）。
+**测试分层（单语言）**：① **端到端**（pytest 直调 `bindings`/ctypes，需真实 DLL）——仅覆盖上表"自动"行（只读与参数拒绝类，不改动网络配置），并吸收原 C++ 单测面（JSON 结构、UTF-8↔UTF-16 中文往返、参数校验、`v6_last_error` 截断、线程局部语义）；② **纯 Python 单测**（mock DLL，无需真实 DLL）——`core_ops` 编排（`if_index`↔`name` 校验、先 DNS 后关 IPv4 顺序）、`bindings` 封装（缓冲扩容重试、错误码转异常）、`presets` 配置解析、`admin.is_admin()` 只读冒烟（TokenElevation 真实调用）、GUI 线程模型（Worker 调度与 signal 回传）与 **MainWindow offscreen 用例**（默认选中、选中态与控件可用性矩阵、虚拟适配器过滤）；③ **网络变更类操作（IPv4 开关、切换序列、reset 往返）全部为人工测试**，经 CLI/GUI 真机执行（见手动验收清单）。**不设 C++ 单元测试载体**（取舍与残留风险见 §10）。GUI offscreen 用例通过 `QT_QPA_PLATFORM=offscreen` 运行，不弹窗、不提权。
 
 **手动验收清单**（CAUC 校内网络真机）：
 
+0. **前置确认 NAT64 可达性（§1.1 环境假设）**：`route print -6` 存在 `::/0` 默认路由（覆盖 `64:ff9b::/96`）；无默认路由则本工具在该环境无效，终止验收并记录环境限制；
 1. GUI 与 CLI 分别以普通权限/管理员运行，提权自检与 `runas` 重启行为正确；
 2. GUI 与 CLI 罗列适配器结果一致（含中文名称）；
 3. GUI 切换后 `ipconfig /all`：无 IPv4 地址、IPv6 DNS 为 DNS64 地址；
@@ -473,11 +555,13 @@ cauc-v6switch/
 | 风险 | 影响 | 缓解 |
 | --- | --- | --- |
 | 跨边界字符编码错误（中文适配器名"以太网"） | 乱码/崩溃 | 全链路统一 UTF-8；矩阵专门用例 |
+| 内部纯函数无法被端到端断言（netsh 命令行转义、JSON 转义） | 特殊连接名（含引号等）可能致命令异常 | 相对多数已被 E2E 覆盖；转义/序列化逻辑集中且简单化，便于人工审查；异常连接名用例难复现，作为已知残留风险 |
 | 缓冲区大小/内存边界错误 | 调用方崩溃 | caller-allocated 原则；固定容量（64 KB）一次调用 + `V6_ERR_BUFFER` 兜底重试 |
 | GUI 与 CLI 编排实现漂移 | 行为不一致 | 切换/重置编排强制集中于 `core_ops.py`，双入口共用 |
 | 调用方编排顺序错误（先关 IPv4 后设 DNS） | 切换期间解析中断 | 顺序铁律固化在 `core_ops.py`（§11）；禁止绕过它直接调 DLL 序列 |
 | MinGW 头文件不完整 / INetCfg（COM）复杂度超预期 | M1/M2 延期 | 内嵌 COM 接口声明；兜底降级：DLL 内 netsh 子进程 |
-| nat64.net 不可达（网络策略封锁/服务下线） | 切换后无法访问 IPv4 资源 | DNS 先设、IPv4 后禁；`v6_reset` 兜底；可换用其他内置预设节点（Trex / level66）或自定义 |
+| nat64.net 不可达（网络策略封锁/服务下线） | 切换后无法访问 IPv4 资源 | DNS 先设、IPv4 后禁；`v6_reset` 兜底；可编辑 `config.yaml` 换用其他节点（Trex / level66 等，取消注释即启用） |
+| 校园 IPv6 无默认路由（`64:ff9b::/96` 不可达，§1.1 环境假设不成立） | DNS64 合成地址无法翻译，切换后 IPv4 资源全断；**换任何预设节点均无效**，易误判为工具缺陷 | 验收第 0 条前置确认 `route print -6`；确认无路由即判定该环境不适用本工具，非缺陷 |
 | 切换失败/断网后需还原 | 用户锁死 v6-only | 工具本地运行、不依赖网络，重启 `v6switch.exe` 用 GUI `v6_reset` 恢复默认；必要时用系统"网络和 Internet 设置"手工恢复 |
 | 安全软件拦截修改 | 操作失败 | 明确报错并提示放行 |
 | 操作非目标适配器（期间接口增删、索引复用） | 其他网络受损 | 单接口作用域 + 二次确认；`core_ops` 执行前 `if_index`↔`name` 配对二次校验，不符拒绝执行 |
@@ -494,6 +578,7 @@ cauc-v6switch/
 - 分层铁律：应用层不做底层网络操作、DLL 不做用户交互；
 - **COM 初始化归属**：DLL 自身以 RAII 初始化/释放 COM（`CoInitializeEx`），调用方线程无需处理（见 §5.1.3）；
 - **错误读取铁律**：错误码转异常须在同一线程、紧随 DLL 调用返回完成，禁止跨线程缓存或延迟读取 `v6_last_error`（见 §5.2）；
+- **线程铁律**：GUI 主线程禁止直调 DLL，所有 DLL 操作一律经 QThread 工作线程执行，错误读取与转异常在工作线程完成、经 signal 回传（见 §5.2 线程模型）；
 - **身份校验铁律：执行任何变更前，`core_ops` 必须重新罗列并以 `if_index`↔`name` 配对校验目标接口**——不符（目标消失/索引被复用）一律拒绝执行并提示刷新重选；
 - **切换顺序铁律：必须先 `v6_set_ipv6_dns` 成功、再 `v6_set_ipv4(0)`**；还原一律用 `v6_reset`——固化于 `core_ops.py`，GUI/CLI 一律经它调用，禁止各自拼 DLL 调用序列。
 - GUI设计考虑极限拉伸缩放环境，各个元素必须完整展示，如有必要可以设置最小窗口尺寸。
