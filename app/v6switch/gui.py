@@ -224,8 +224,10 @@ class MainWindow(QMainWindow):
         if target is not None:
             r = rows.index(target)
             self.table.selectRow(r)
-        else:
-            self._update_status_panel(None)
+        # 显式同步状态面板：列表与状态面板同源（FR-1 一次调用两用），重填充后若选中行
+        # 未变化，itemSelectionChanged 不会发射，依赖信号会保留旧数据（刷新后状态
+        # 面板不更新的根因），故无论信号是否发射都按当前选中渲染
+        self._update_status_panel(self._selected())
         self._update_buttons()
 
     def _selected(self) -> dict | None:

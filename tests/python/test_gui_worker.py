@@ -125,3 +125,33 @@ def test_mainwindow_virtual_filter_toggle(qapp, monkeypatch, tmp_path):
     finally:
         win.deleteLater()
         qapp.processEvents()
+
+
+# ---- 刷新后状态面板同步（回归：重填充后选中行未变时信号不发射） ----
+
+def test_mainwindow_refresh_updates_status_panel(qapp, monkeypatch, tmp_path):
+    from fake_dll import FakeDll
+    from v6switch.bindings.v6core import V6Core
+    from v6switch.gui import MainWindow
+
+    monkeypatch.setattr("v6switch.presets.config_path", lambda: tmp_path / "config.yaml")
+    fake = FakeDll()
+    win = MainWindow(V6Core(dll=fake))
+    try:
+        _wait_idle(qapp, win)
+        assert win.lbl_ipv4.text() == "10.132.0.8"
+        assert win.lbl_mode.text() == "双栈"
+
+        # 模拟"切换 IPv6-only 后点刷新"：同一 if_index 的地址状态变化、行数不变
+        fake.adapters[0]["ipv4"] = []
+        fake.adapters[0]["ipv6"] = ["2001:da8:1005::1008"]
+        win._refresh_adapters()
+        _wait_idle(qapp, win)
+
+        # 表格与状态面板都必须反映新数据（此前状态面板依赖选中变化信号，保持旧值）
+        assert win.lbl_ipv4.text() == "已关闭"
+        assert win.lbl_mode.text() == "IPv6-only"
+        assert win.table.item(0, 4).text() == "已关闭"
+    finally:
+        win.deleteLater()
+        qapp.processEvents()
