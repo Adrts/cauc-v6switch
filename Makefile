@@ -127,11 +127,13 @@ exe: dist/v6switch.exe
 export PYI_LOG_LEVEL = WARN
 
 dist/v6switch.exe: $(VENV)/Scripts/python.exe \
-		$(wildcard app/v6switch/*.py) $(wildcard app/v6switch/bindings/*.py) app/run.py app/trim_pyside6.py app/pyproject.toml
+		$(wildcard app/v6switch/*.py) $(wildcard app/v6switch/bindings/*.py) \
+		$(wildcard app/v6switch/resources/*) app/run.py app/trim_pyside6.py app/pyproject.toml
 	@echo TRIM PySide6
 	$(Q)$(PY) app/trim_pyside6.py
 	@echo PYINSTALLER $@
 	$(Q)$(PY) -m PyInstaller --onefile --noconsole --name v6switch $(PI_LOGFLAGS) $(PI_EXCLUDES) \
+		--add-data "$(abspath app/v6switch/resources);v6switch/resources" \
 		--paths app --specpath build --workpath build/pyinstaller --distpath dist \
 		app/run.py
 

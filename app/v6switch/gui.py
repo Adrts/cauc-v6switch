@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -33,6 +35,9 @@ from .presets import ConfigError, load_dns64
 
 _WINDOW_TITLE = "CAUC IPv6 Switch"
 _COL_HEADERS = ["名称", "描述", "状态", "IP 摘要", "IPv4 状态"]
+
+# 应用图标（窗口标题栏 + 任务栏）；frozen 时随 --add-data 收集到 _MEIPASS/v6switch/resources
+_APP_ICON = Path(__file__).resolve().parent / "resources" / "appicon.png"
 
 
 class Worker(QThread):
@@ -77,6 +82,8 @@ class MainWindow(QMainWindow):
         self._dns64_error: str | None = None
 
         self.setWindowTitle(_WINDOW_TITLE)
+        if _APP_ICON.is_file():
+            self.setWindowIcon(QIcon(str(_APP_ICON)))
         self.setMinimumSize(860, 640)
         self._build_ui()
         self._load_dns64_preview()
@@ -369,6 +376,8 @@ def run() -> int:
     admin.ensure_admin(["v6switch"], gui=True)
 
     app = QApplication(sys.argv)
+    if _APP_ICON.is_file():
+        app.setWindowIcon(QIcon(str(_APP_ICON)))  # 弹窗等默认图标沿用应用图标
     try:
         core = V6Core()
     except V6DllNotFound as exc:

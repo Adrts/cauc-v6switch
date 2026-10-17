@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 项目名称 | cauc-v6switch（CAUC IPv6 Switch） |
-| 版本 | v0.28（实现稿；合并实现期结论：INetCfg 匹配键/头文件签名以安装头为准、DNS 回滚局限、参数校验先于提权检查、构建系统规范、测试落地清单） |
+| 版本 | v0.29（实现稿；窗口/任务栏图标落地：resources/appicon.png，经 --add-data 随包收集） |
 | 日期 | 2026-10-17 |
 | 性质 | 练手 / 技术栈测试型小工具 |
 | 核心测试目标 | **动态链接库（DLL）的封装与 FFI 调用**（主链路 Python ctypes；多语言样例暂缓） |
@@ -380,7 +380,7 @@ DLL 执行后不自动回读，调用方刷新列表（看 `ipv4[]`/`dns_v6`）�
 
 **骨架**：单窗口纵向分区——顶部列表区（A）→ 中部状态面板（B）→ 底部操作区（C）→ 窗口最底部状态栏（E4）；窗口设最小尺寸，极限拉伸/缩放下各元素完整展示（§11）。
 
-**实际布局（已按骨架落地）**：单 `QVBoxLayout` 纵向排列三个 `QGroupBox`（拉伸比 3:2:2）——A「网络连接」（`QTableWidget` 单选行，列＝名称/描述/状态/IP 摘要/IPv4 状态；底部一行：显示虚拟适配器复选框 + 弹簧 + 刷新按钮）→ B「当前状态」（`QFormLayout`：模式/IPv4 地址/IPv6 地址/DNS，地址行可选中复制）→ C「操作」（DNS64 预览 `QLabel` 自动换行；按钮行右对齐：切换 IPv6-only、重置）。状态栏左＝执行状态、右＝提权标识。**视觉样式**：Qt 原生主题，无自定义配色/图标；DNS64 预览异常态以红色文字标示。窗口最小尺寸 860×640，各元素可随拉伸完整展示（§11）。
+**实际布局（已按骨架落地）**：单 `QVBoxLayout` 纵向排列三个 `QGroupBox`（拉伸比 3:2:2）——A「网络连接」（`QTableWidget` 单选行，列＝名称/描述/状态/IP 摘要/IPv4 状态；底部一行：显示虚拟适配器复选框 + 弹簧 + 刷新按钮）→ B「当前状态」（`QFormLayout`：模式/IPv4 地址/IPv6 地址/DNS，地址行可选中复制）→ C「操作」（DNS64 预览 `QLabel` 自动换行；按钮行右对齐：切换 IPv6-only、重置）。状态栏左＝执行状态、右＝提权标识。**视觉样式**：Qt 原生主题，无自定义配色；窗口/任务栏图标使用包内资源 `resources/appicon.png`（窗口 `setWindowIcon` + 应用级 `QApplication.setWindowIcon`，QIcon 缩放多尺寸；frozen 下经 `--add-data` 收集到 `_MEIPASS/v6switch/resources`，与运行时 `__file__` 相对定位一致；exe 文件本体图标即"桌面图标"暂未定制）。DNS64 预览异常态以红色文字标示。窗口最小尺寸 860×640，各元素可随拉伸完整展示（§11）。
 
 - **构建/打包**：开发期直接 `python -m v6switch` 运行；分发由根 `Makefile` 的 `exe` 目标调 PyInstaller 打单文件 exe（`--onefile --noconsole`），详见 §5.6；
 - **选型说明**：PySide6（Qt 官方 Python 绑定，LGPL）控件成熟、观感现代；重心仍是链路与 FFI 正确性，不做复杂界面动效。
@@ -444,7 +444,7 @@ dns64:
 | `make test` | pytest（`tests/python/`，含真实 DLL 端到端用例——仅只读/参数拒绝类，不改动网络配置，见 §8） | — |
 | `make clean` | 清理中间产物 | — |
 
-- **最终产物仅两个文件，分离分发**：`v6core.dll`（C ABI 库）+ `v6switch.exe`（单文件 exe，内嵌 Python 运行时与 PySide6，**不含 DLL**，**仅含 GUI 入口**）。两文件须放在同一目录；exe 运行时从**自身同目录**加载 `v6core.dll`，`bindings` 探测顺序：① exe/主模块同目录 → ② 开发期项目 `dist/` → ③ 加载失败弹窗提示缺 DLL；`make exe` 不使用 `--add-binary`；
+- **最终产物仅两个文件，分离分发**：`v6core.dll`（C ABI 库）+ `v6switch.exe`（单文件 exe，内嵌 Python 运行时与 PySide6，**不含 DLL**，**仅含 GUI 入口**）。两文件须放在同一目录；exe 运行时从**自身同目录**加载 `v6core.dll`，`bindings` 探测顺序：① exe/主模块同目录 → ② 开发期项目 `dist/` → ③ 加载失败弹窗提示缺 DLL；`make exe` 不使用 `--add-binary`（DLL 永不内嵌），仅用 `--add-data` 收集应用图标资源 `resources/`（`--specpath build` 下源路径须经 make `abspath` 定位）；
 - **配置文件便携化**：`config.yaml` 不内嵌、不随包分发；首次运行生成于 exe 同目录（双模式定位规则见 §5.4），与"程序同目录"原则一致；
 - **打包入口收敛为 GUI 单入口**：`--onefile --noconsole` 生成窗口子系统 exe，无控制台句柄，无法承载 CLI。故交付包只含 GUI；CLI 入口仅存在于源码/开发环境（`python -m v6switch.cli`）。**不做**"按参数分支让同一 exe 兼作 GUI/CLI"的方案（否则要么破坏 `--noconsole`、要么 GUI 启动闪控制台窗口）。打包入口为 `app/run.py`（包外脚本、绝对导入）——包内 `__main__.py` 含相对导入，直接作 PyInstaller 脚本入口会因无包上下文而失败；
 - 工具链前置：llvm-mingw（clang++ + mingw-w64 UCRT 头/库，`D:\Toolchains\llvm-mingw-*`，与项目根 `.clangd` 一致；`make dll` 经根 Makefile 的 CXX 变量指定，命令行可覆盖）、Python ≥ 3.11 venv（`pyproject.toml` 含 pyinstaller）。
@@ -492,6 +492,7 @@ cauc-v6switch/
 │   │   ├── core_ops.py          # 切换/重置编排（身份校验 + 顺序铁律，GUI/CLI 共用）
 │   │   ├── presets.py           # config.yaml 读写（便携式定位：frozen→exe 目录 / dev→app/）
 │   │   ├── admin.py             # 提权检测 + runas 重启自身
+│   │   ├── resources/appicon.png  # 窗口/任务栏图标（--add-data 随包收集）
 │   │   └── bindings/v6core.py   # ctypes 绑定封装
 │   ├── run.py                   # PyInstaller 打包专用入口（脚本态绝对导入，仅构建用）
 │   ├── trim_pyside6.py          # 打包前 PySide6 体积裁剪（幂等改名停用，仅构建用）
