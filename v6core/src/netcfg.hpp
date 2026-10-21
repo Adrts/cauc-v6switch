@@ -2,6 +2,8 @@
 #ifndef V6CORE_SRC_NETCFG_HPP
 #define V6CORE_SRC_NETCFG_HPP
 
+#include <stdint.h>
+
 // 修改指定适配器（按 if_index 定位）上指定协议组件的绑定状态
 // component_id 如 L"ms_tcpip"；enable=true 绑定，false 解绑
 // 返回 V6_OK / V6_ERR_PARAM / V6_ERR_ADMIN / V6_ERR_EXEC（错误描述已写）

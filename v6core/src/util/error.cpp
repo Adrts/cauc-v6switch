@@ -2,7 +2,6 @@
 
 #include <cstdarg>
 #include <cstdio>
-#include <cstring>
 #include <windows.h>
 #include "util/strutil.hpp"
 
@@ -42,7 +41,7 @@ int set(int code, const char* fmt, ...) {
     va_start(ap, fmt);
     std::string msg = vformat(fmt, ap);
     va_end(ap);
-    if (msg.size() > kMaxErrLen) msg.resize(kMaxErrLen);
+    truncate_utf8(msg, kMaxErrLen);
     t_err_msg = std::move(msg);
     return code;
 }
@@ -54,7 +53,7 @@ int set_win(int code, unsigned long win_err, const char* fmt, ...) {
     va_end(ap);
     msg += ": ";
     msg += win_text(win_err);
-    if (msg.size() > kMaxErrLen) msg.resize(kMaxErrLen);
+    truncate_utf8(msg, kMaxErrLen);
     t_err_msg = std::move(msg);
     return code;
 }

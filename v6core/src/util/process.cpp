@@ -50,11 +50,17 @@ ProcResult run_hidden(const std::wstring& exe_full_path, const std::wstring& par
     CloseHandle(wr); // 父进程立即关写端，读端读到 EOF 即子进程退出
     result.launched = true;
 
-    // 排空管道至 EOF，再等进程退出（输出量小，无死锁风险）
+    // 排空管道至 EOF，再等进程退出；输出仅用于错误描述，读取量做上限保护
+    constexpr size_t kMaxCapture = 64 * 1024;
     char buf[4096];
     DWORD n = 0;
     std::string raw;
-    while (ReadFile(rd, buf, sizeof(buf), &n, nullptr) && n > 0) raw.append(buf, n);
+    while (ReadFile(rd, buf, sizeof(buf), &n, nullptr) && n > 0) {
+        if (raw.size() < kMaxCapture) {
+            const size_t remain = kMaxCapture - raw.size();
+            raw.append(buf, n < remain ? n : remain);
+        }
+    }
     CloseHandle(rd);
 
     bool timed_out = false;
@@ -73,10 +79,10 @@ ProcResult run_hidden(const std::wstring& exe_full_path, const std::wstring& par
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
 
-    // netsh 输出为 OEM 代码页文本，转 UTF-8 并截断（仅用于错误描述）
+    // netsh 输出为 OEM 代码页文本，转 UTF-8 并按字符边界截断（仅用于错误描述）
     std::string text = codepage_to_utf8(CP_OEMCP, raw.data(), raw.size());
     if (text.size() > 1024) {
-        text.resize(1024);
+        truncate_utf8(text, 1024);
         text += "...";
     }
     if (timed_out) text += "[子进程超时 60 秒，已终止]";

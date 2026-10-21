@@ -3,10 +3,14 @@
 #include <windows.h>
 #include <cstring>
 
+// MultiByteToWideChar / WideCharToMultiByte 的 len 参数为 int，先做上限保护
+constexpr size_t kMaxMbcsLen = 0x7FFFFFFF;
+
 std::wstring utf8_to_wide(const char* s, size_t len) {
     if (!s) return {};
     if (len == static_cast<size_t>(-1)) len = strlen(s);
     if (len == 0) return {};
+    if (len > kMaxMbcsLen) len = kMaxMbcsLen;
     int need = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s, static_cast<int>(len), nullptr, 0);
     if (need <= 0) {
         // 含非法字节：降级为不校验模式，避免整条消息丢失
@@ -22,6 +26,7 @@ std::string wide_to_utf8(const wchar_t* s, size_t len) {
     if (!s) return {};
     if (len == static_cast<size_t>(-1)) len = wcslen(s);
     if (len == 0) return {};
+    if (len > kMaxMbcsLen) len = kMaxMbcsLen;
     int need = WideCharToMultiByte(CP_UTF8, 0, s, static_cast<int>(len), nullptr, 0, nullptr, nullptr);
     if (need <= 0) return {};
     std::string out(static_cast<size_t>(need), '\0');
@@ -37,6 +42,14 @@ std::string codepage_to_utf8(unsigned codepage, const char* s, size_t len) {
     std::wstring wide(static_cast<size_t>(need), L'\0');
     MultiByteToWideChar(static_cast<UINT>(codepage), 0, s, static_cast<int>(len), wide.data(), need);
     return wide_to_utf8(wide);
+}
+
+void truncate_utf8(std::string& text, size_t max_bytes) {
+    if (text.size() <= max_bytes) return;
+    size_t cut = max_bytes;
+    // 若截断点落在多字节字符的后续字节上，回退到该字符的首字节之前
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) --cut;
+    text.resize(cut);
 }
 
 std::string json_escape(const std::string& utf8) {
