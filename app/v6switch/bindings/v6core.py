@@ -54,11 +54,11 @@ class V6DllNotFound(Exception):
 
 
 def dll_candidates() -> list[Path]:
-    """DLL 探测顺序（§5.6）：① exe/主模块同目录（frozen）→ ② 开发期项目 dist/。"""
+    """DLL 探测顺序（§5.6）：① exe/主模块同目录（frozen）→ ② 开发期 dist/v6switch（兼容旧 dist/）。"""
     if getattr(sys, "frozen", False):
         return [Path(sys.executable).resolve().parent / "v6core.dll"]
     root = Path(__file__).resolve().parents[3]  # app/v6switch/bindings/ → 项目根
-    return [root / "dist" / "v6core.dll"]
+    return [root / "dist" / "v6switch" / "v6core.dll", root / "dist" / "v6core.dll"]
 
 
 def load_dll() -> ctypes.CDLL:

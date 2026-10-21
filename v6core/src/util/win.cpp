@@ -1,7 +1,6 @@
 #include "util/win.hpp"
 
 #include <winsock2.h>
-#include <ws2tcpip.h>
 #include <objbase.h>
 
 WsaGuard::WsaGuard() {

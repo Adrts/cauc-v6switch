@@ -78,7 +78,7 @@ def load_dns64() -> list[str]:
         raise ConfigError(f"无法读取配置文件 {path}：{exc}") from exc
     try:
         data = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, RecursionError) as exc:
         raise ConfigError(f"配置文件 YAML 解析失败：{exc}") from exc
 
     if not isinstance(data, dict) or "dns64" not in data:

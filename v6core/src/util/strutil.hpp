@@ -15,6 +15,9 @@ inline std::string wide_to_utf8(const std::wstring& s) { return wide_to_utf8(s.d
 // 指定代码页 → UTF-8（用于 netsh 控制台输出的 OEM 代码页文本）
 std::string codepage_to_utf8(unsigned codepage, const char* s, size_t len);
 
+// 按 UTF-8 字符边界截断到最多 max_bytes 字节（避免切断多字节字符）
+void truncate_utf8(std::string& text, size_t max_bytes);
+
 // JSON 字符串转义：包裹引号并转义 " \ 与控制字符（其余字节原样透传，须为合法 UTF-8）
 std::string json_escape(const std::string& utf8);
 

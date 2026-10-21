@@ -5,6 +5,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -40,15 +41,14 @@ using SetInterfaceDnsSettingsFn =
     unsigned long (__stdcall *)(const GUID *, const DNS_INTERFACE_SETTINGS *);
 
 SetInterfaceDnsSettingsFn set_dns_api() {
+    static std::once_flag once;
     static SetInterfaceDnsSettingsFn fn = nullptr;
-    static bool resolved = false;
-    if (!resolved) {
-        resolved = true;
+    std::call_once(once, [] {
         // iphlpapi 在本 DLL 导入表内（GetAdaptersAddresses），必然已加载
         if (HMODULE h = GetModuleHandleW(L"iphlpapi.dll"))
             fn = reinterpret_cast<SetInterfaceDnsSettingsFn>(
                 GetProcAddress(h, "SetInterfaceDnsSettings"));
-    }
+    });
     return fn;
 }
 

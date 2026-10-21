@@ -37,6 +37,17 @@ def _find_adapter(adapters: list[dict], if_index: int) -> dict | None:
     return next((a for a in adapters if a.get("if_index") == if_index), None)
 
 
+def _if_index(value: str) -> int:
+    """argparse 类型：if_index 必须是 1..2^32-1 的整数（0 为无效值）。"""
+    try:
+        index = int(value, 10)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("if_index 必须是整数") from exc
+    if not 1 <= index <= 0xFFFFFFFF:
+        raise argparse.ArgumentTypeError("if_index 超出范围（1..4294967295）")
+    return index
+
+
 def _ask_index(core: V6Core, action: str) -> tuple[int, str] | None:
     """罗列并让用户输入 if_index，返回 (if_index, name)；输入非法返回 None。"""
     adapters = core.list_adapters()
@@ -152,14 +163,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list", help="罗列网络连接")
 
     p = sub.add_parser("set-ipv4", help="开关指定连接的 IPv4 绑定（开发调试用，单步直调）")
-    p.add_argument("if_index", type=int)
+    p.add_argument("if_index", type=_if_index)
     p.add_argument("state", choices=["on", "off"], help="on=开启 off=关闭")
 
     p = sub.add_parser("set-dns", help="为指定连接写入 config.yaml 启用的 DNS64（开发调试用）")
-    p.add_argument("if_index", type=int)
+    p.add_argument("if_index", type=_if_index)
 
     p = sub.add_parser("reset", help="重置指定连接（恢复默认配置，经 core_ops 身份校验）")
-    p.add_argument("if_index", type=int)
+    p.add_argument("if_index", type=_if_index)
 
     sub.add_parser("presets", help="显示 DNS64 配置文件路径与启用地址")
     return parser

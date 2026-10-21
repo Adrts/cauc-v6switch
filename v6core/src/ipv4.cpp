@@ -28,13 +28,14 @@ struct NetCfgSession {
     bool locked = false;
 
     ~NetCfgSession() {
-        if (nc) {
-            if (initialized) nc->Uninitialize();
-            nc->Release();
-        }
+        // 先释放写锁，再反初始化并释放 INetCfg（写锁依附于该会话）
         if (lock) {
             if (locked) lock->ReleaseWriteLock();
             lock->Release();
+        }
+        if (nc) {
+            if (initialized) nc->Uninitialize();
+            nc->Release();
         }
     }
 };
