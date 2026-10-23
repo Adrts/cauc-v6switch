@@ -5,7 +5,8 @@
 # Windows 下命令：make（scoop GNU Make）或 mingw32-make
 
 # 编译器：llvm-mingw（clang + mingw-w64 UCRT），与项目根 .clangd 配置一致；命令行可用 CXX=... 覆盖
-CXX       = D:/Toolchains/llvm-mingw-20260908-ucrt-x86_64/bin/clang++.exe
+CC        = clang.exe
+CXX       = clang++.exe
 CXXFLAGS  = -std=c++17 -O2 -Wall -Wextra -D_WIN32_WINNT=0x0601
 DLL_LIBS  = -lipHlpApi -lws2_32 -lole32 -loleaut32 -luuid -ladvapi32
 
