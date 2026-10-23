@@ -58,12 +58,13 @@ def test_empty_list_rejected(tmp_path, monkeypatch):
         presets.load_dns64()
 
 
-def test_over_limit_rejected(tmp_path, monkeypatch):
+def test_over_limit_truncated_in_file_order(tmp_path, monkeypatch):
     monkeypatch.setattr(PATCH, lambda: cfg(tmp_path))
-    lines = "\n".join(f"  - 2001:db8::{i}" for i in range(17))
+    lines = "\n".join(f"  - 2001:db8::{i}" for i in range(12))
     cfg(tmp_path).write_text(f"dns64:\n{lines}\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="超过上限"):
-        presets.load_dns64()
+    servers = presets.load_dns64()
+    assert len(servers) == presets.MAX_DNS64 == 10
+    assert servers == [f"2001:db8::{i}" for i in range(10)]  # 按文件顺序取前 10 条
 
 
 def test_malformed_yaml_rejected(tmp_path, monkeypatch):

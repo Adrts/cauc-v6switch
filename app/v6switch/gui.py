@@ -315,27 +315,20 @@ class MainWindow:
         status_canvas.bind("<Configure>", _sync_width)
         status_canvas.bind("<Configure>", _wrap_status, add="+")
 
-        # C 操作区
+        # C 操作区（单行：左侧 DNS64 提示，右侧按钮）
         body_c = card("操作", 2, (gap, px(12)), False)
         body_c.columnconfigure(0, weight=1)
         self.lbl_dns64 = tk.Label(
             body_c, text="-", background=_CARD_COLOR, foreground=_MUTED_COLOR,
-            anchor="w", justify="left", wraplength=px(700),
+            anchor="w", justify="left", wraplength=px(380),
         )
-        self.lbl_dns64.grid(row=0, column=0, sticky="ew", pady=(0, px(7)))
+        self.lbl_dns64.grid(row=0, column=0, sticky="w", padx=(0, px(12)))
         row_c = tk.Frame(body_c, background=_CARD_COLOR)
-        row_c.grid(row=1, column=0, sticky="e")
+        row_c.grid(row=0, column=1, sticky="e")
         self.btn_switch = ttk.Button(row_c, text="切换 IPv6-only", command=self._on_switch)
         self.btn_switch.pack(side="right", padx=(12, 0))
         self.btn_reset = ttk.Button(row_c, text="重置", command=self._on_reset)
         self.btn_reset.pack(side="right")
-
-        def _wrap_dns64(event: tk.Event) -> None:
-            wrap = max(event.width - px(28), px(200))
-            if int(self.lbl_dns64.cget("wraplength")) != wrap:
-                self.lbl_dns64.configure(wraplength=wrap)
-
-        body_c.bind("<Configure>", _wrap_dns64)
 
         # E 状态栏（分隔线 + 左右状态）
         separator = tk.Frame(root, background=_CARD_BORDER, height=px(1))
@@ -418,7 +411,7 @@ class MainWindow:
         else:
             count = len(self._dns64)
             self.lbl_dns64.configure(
-                text=f"已启用 {count} 条 DNS64（来自 config.yaml，修改请编辑配置文件）",
+                text=f"已启用 {count} 条 DNS64（config.yaml 可编辑）",
                 foreground=_MUTED_COLOR,
             )
 

@@ -3,7 +3,7 @@
 - 便携式：与程序本体同目录（frozen → exe 目录；开发 → app/）；
 - 首次运行不存在 → 自动生成默认配置（程序始终以管理员运行，写入权限有保证）；
 - 解析规则：顺序即写入顺序；行首加 # 即停用（YAML 解析天然排除注释行）；
-  未注释行数即 count（须 1 ≤ count ≤ 16）；
+  按文件顺序取前 10 条启用地址（1 ≤ count ≤ 10），超出部分直接忽略；
 - GUI 只读预览，修改经编辑配置文件。
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-MAX_DNS64 = 16
+MAX_DNS64 = 10
 
 _DEFAULT_SERVERS = [
     ("2a00:1098:2b::1", "nat64.net Amsterdam"),
@@ -38,7 +38,7 @@ def _default_config_text() -> str:
     lines = [
         "# DNS64 服务器列表",
         "# 规则：按序写入 v6_set_ipv6_dns；行首加 # 即停用该地址；",
-        "# 未注释行数 = 实际写入数量 count（须 1 ≤ count ≤ 16）",
+        "# 未注释行数 = 实际写入数量 count（按文件顺序取前 10 条，超出部分忽略）",
         "dns64:",
     ]
     for i, (addr, note) in enumerate(_DEFAULT_SERVERS):
@@ -99,9 +99,9 @@ def load_dns64() -> list[str]:
         except (ipaddress.AddressValueError, ValueError) as exc:
             raise ConfigError(f"dns64 第 {i + 1} 项（{addr}）不是合法 IPv6 地址：{exc}") from exc
         servers.append(addr)
+        if len(servers) >= MAX_DNS64:
+            break  # 按文件顺序取前 MAX_DNS64 条，其余忽略
 
     if not servers:
         raise ConfigError("dns64 列表为空：至少启用 1 个地址（行首 # 为停用）")
-    if len(servers) > MAX_DNS64:
-        raise ConfigError(f"dns64 启用数量 {len(servers)} 超过上限 {MAX_DNS64}")
     return servers
